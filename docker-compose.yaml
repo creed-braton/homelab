@@ -1,0 +1,190 @@
+services:
+  postgres:
+    container_name: postgres
+    image: postgres:17.5
+    restart: unless-stopped
+    ports:
+      - 5432:5432
+    volumes:
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASS}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  postgres-exporter:
+    container_name: postgres-exporter
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_URI: "postgres:5432/postgres?sslmode=disable"
+      DATA_SOURCE_USER: postgres
+      DATA_SOURCE_PASS: ${DB_PASS}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9187/"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      postgres:
+        condition: "service_healthy"
+
+  keycloak:
+    container_name: keycloak
+    build:
+      context: ./keycloak
+      args:
+        KC_URI: ${HOST_URI}/auth
+        GF_URI: ${HOST_URI}/dashboard
+        GF_CLIENT_SECRET: ${GF_CLIENT_SECRET}
+    restart: unless-stopped
+    command:
+      ["start", "--optimized", "--import-realm", "--hostname=${HOST_URI}/auth"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${ADMIN_USER}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${ADMIN_PASS}
+      KC_HOSTNAME_STRICT: false
+      KC_HTTP_ENABLED: true
+      KC_DB_URL_HOST: postgres
+      KC_DB_URL_PORT: 5432
+      KC_DB_SCHEMA: keycloak
+      KC_DB_URL_DATABASE: postgres
+      KC_DB: postgres
+      KC_DB_USERNAME: postgres
+      KC_DB_PASSWORD: ${DB_PASS}
+      KC_HTTP_PORT: 8080
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          '[ -f /tmp/HealthCheck.java ] || echo "public class HealthCheck { public static void main(String[] args) throws java.lang.Throwable { System.exit(java.net.HttpURLConnection.HTTP_OK == ((java.net.HttpURLConnection)new java.net.URL(args[0]).openConnection()).getResponseCode() ? 0 : 1); } }" > /tmp/HealthCheck.java && java /tmp/HealthCheck.java http://localhost:9000/health/live',
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      postgres:
+        condition: "service_healthy"
+
+  cadvisor:
+    container_name: cadvisor
+    image: gcr.io/cadvisor/cadvisor:v0.52.0
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  prometheus:
+    container_name: prometheus
+    image: prom/prometheus:v3.4.1
+    restart: unless-stopped
+    command: ["--config.file=/etc/prometheus/config.yaml"]
+    volumes:
+      - ./prometheus/config.yaml:/etc/prometheus/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  grafana:
+    container_name: grafana
+    build:
+      context: ./grafana
+      args:
+        GF_URI: ${HOST_URI}/dashboard
+        KC_URI: ${HOST_URI}/auth
+        GF_CLIENT_SECRET: ${GF_CLIENT_SECRET}
+        DB_PASS: ${DB_PASS}
+    restart: unless-stopped
+    volumes:
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    environment:
+      GF_SECURITY_ADMIN_USER: ${ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${ADMIN_PASS}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      keycloak:
+        condition: "service_healthy"
+
+  nginx:
+    container_name: nginx
+    build:
+      context: ./nginx
+    restart: unless-stopped
+    ports:
+      - 5000:80
+    healthcheck:
+      test: service nginx status || exit 1
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      keycloak:
+        condition: "service_healthy"
+      grafana:
+        condition: "service_healthy"
+
+  nginx-exporter:
+    container_name: nginx-exporter
+    image: nginx/nginx-prometheus-exporter:1.4.2
+    restart: unless-stopped
+    command: ["--nginx.scrape-uri=http://nginx:8080/stub_status"]
+    volumes:
+      - healthcheck-build:/usr/bin/healthcheck:ro
+    healthcheck:
+      test:
+        ["CMD", "/usr/bin/healthcheck/healthcheck", "http://localhost:9113/"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      nginx:
+        condition: "service_healthy"
+
+  cloudflare-tunnel:
+    container_name: cloudflare-tunnel
+    image: cloudflare/cloudflared:1710-3f6b1f24d036
+    restart: unless-stopped
+    command: tunnel --metrics 0.0.0.0:6000 run --token ${TUNNEL_TOKEN}
+    volumes:
+      - healthcheck-build:/usr/bin/healthcheck:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/usr/bin/healthcheck/healthcheck",
+          "http://localhost:6000/ready",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      nginx:
+        condition: "service_healthy"
+
+  healthcheck-build:
+    container_name: healthcheck-build
+    build:
+      context: ./healthcheck
+    volumes:
+      - healthcheck-build:/healthcheck
+
+volumes:
+  healthcheck-build:
