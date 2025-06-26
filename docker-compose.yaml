@@ -1,3 +1,10 @@
+networks:
+  homelab:
+    driver: bridge
+
+volumes:
+  healthcheck-build:
+
 services:
   postgres:
     container_name: postgres
@@ -5,6 +12,8 @@ services:
     restart: unless-stopped
     ports:
       - 5432:5432
+    networks:
+      - homelab
     volumes:
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     environment:
@@ -19,6 +28,8 @@ services:
     container_name: postgres-exporter
     image: prometheuscommunity/postgres-exporter:v0.17.1
     restart: unless-stopped
+    networks:
+      - homelab
     environment:
       DATA_SOURCE_URI: "postgres:5432/postgres?sslmode=disable"
       DATA_SOURCE_USER: postgres
@@ -43,6 +54,8 @@ services:
     restart: unless-stopped
     command:
       ["start", "--optimized", "--import-realm", "--hostname=${HOST_URI}/auth"]
+    networks:
+      - homelab
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${ADMIN_USER}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${ADMIN_PASS}
@@ -75,6 +88,8 @@ services:
     image: gcr.io/cadvisor/cadvisor:v0.52.0
     restart: unless-stopped
     privileged: true
+    networks:
+      - homelab
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:rw
@@ -86,11 +101,34 @@ services:
       timeout: 10s
       retries: 5
 
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    container_name: node-exporter
+    restart: unless-stopped
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.rootfs=/rootfs"
+      - "--path.sysfs=/host/sys"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    networks:
+      - homelab
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9100/"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
   prometheus:
     container_name: prometheus
     image: prom/prometheus:v3.4.1
     restart: unless-stopped
     command: ["--config.file=/etc/prometheus/config.yaml"]
+    networks:
+      - homelab
     volumes:
       - ./prometheus/config.yaml:/etc/prometheus/config.yaml:ro
     healthcheck:
@@ -109,6 +147,8 @@ services:
         GF_CLIENT_SECRET: ${GF_CLIENT_SECRET}
         DB_PASS: ${DB_PASS}
     restart: unless-stopped
+    networks:
+      - homelab
     volumes:
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     environment:
@@ -128,6 +168,8 @@ services:
     build:
       context: ./nginx
     restart: unless-stopped
+    networks:
+      - homelab
     ports:
       - 5000:80
     healthcheck:
@@ -146,6 +188,8 @@ services:
     image: nginx/nginx-prometheus-exporter:1.4.2
     restart: unless-stopped
     command: ["--nginx.scrape-uri=http://nginx:8080/stub_status"]
+    networks:
+      - homelab
     volumes:
       - healthcheck-build:/usr/bin/healthcheck:ro
     healthcheck:
@@ -163,6 +207,8 @@ services:
     image: cloudflare/cloudflared:1710-3f6b1f24d036
     restart: unless-stopped
     command: tunnel --metrics 0.0.0.0:6000 run --token ${TUNNEL_TOKEN}
+    networks:
+      - homelab
     volumes:
       - healthcheck-build:/usr/bin/healthcheck:ro
     healthcheck:
@@ -185,6 +231,3 @@ services:
       context: ./healthcheck
     volumes:
       - healthcheck-build:/healthcheck
-
-volumes:
-  healthcheck-build:
