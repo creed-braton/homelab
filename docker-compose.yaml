@@ -1,11 +1,37 @@
 networks:
-  homelab:
+  network:
     driver: bridge
 
 volumes:
+  prometheus:
   healthcheck-build:
 
 services:
+  ####################################################
+  # Data Storage                                     #
+  ####################################################
+  minio:
+    container_name: minio
+    image: minio/minio:RELEASE.2025-06-13T11-33-47Z
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    networks:
+      - network
+    environment:
+      MINIO_ROOT_USER: ${ADMIN_USER}
+      MINIO_ROOT_PASSWORD: ${ADMIN_PASS}
+      MINIO_CONSOLE_ADDRESS: :9001
+      MINIO_BROWSER_REDIRECT_URL: ${HOST_URI}/storage
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 65535
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
   postgres:
     container_name: postgres
     image: postgres:17.5
@@ -13,7 +39,7 @@ services:
     ports:
       - 5432:5432
     networks:
-      - homelab
+      - network
     volumes:
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     environment:
@@ -24,24 +50,9 @@ services:
       timeout: 10s
       retries: 5
 
-  postgres-exporter:
-    container_name: postgres-exporter
-    image: prometheuscommunity/postgres-exporter:v0.17.1
-    restart: unless-stopped
-    networks:
-      - homelab
-    environment:
-      DATA_SOURCE_URI: "postgres:5432/postgres?sslmode=disable"
-      DATA_SOURCE_USER: postgres
-      DATA_SOURCE_PASS: ${DB_PASS}
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9187/"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-    depends_on:
-      postgres:
-        condition: "service_healthy"
+  ####################################################
+  # Authentification                                 #
+  ####################################################
 
   keycloak:
     container_name: keycloak
@@ -55,7 +66,7 @@ services:
     command:
       ["start", "--optimized", "--import-realm", "--hostname=${HOST_URI}/auth"]
     networks:
-      - homelab
+      - network
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${ADMIN_USER}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${ADMIN_PASS}
@@ -83,13 +94,213 @@ services:
       postgres:
         condition: "service_healthy"
 
+  ####################################################
+  # Monitoring                                       #
+  ####################################################
+
+  prometheus:
+    container_name: prometheus
+    image: prom/prometheus:v3.4.1
+    restart: unless-stopped
+    user: 0:0
+    command:
+      [
+        "--config.file=/etc/prometheus/config.yaml",
+        "--storage.tsdb.path=/data",
+        "--storage.tsdb.retention.time=1d",
+        "--storage.tsdb.min-block-duration=5m",
+        "--storage.tsdb.max-block-duration=5m",
+        "--web.enable-lifecycle",
+        "--web.enable-admin-api",
+        "--web.console.libraries=/etc/prometheus/console_libraries",
+        "--web.console.templates=/etc/prometheus/consoles",
+      ]
+    networks:
+      - network
+    volumes:
+      - ./prometheus/config.yaml:/etc/prometheus/config.yaml:ro
+      - prometheus:/data:rw
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  thanos-sidecar:
+    container_name: thanos-sidecar
+    image: quay.io/thanos/thanos:v0.39.1
+    restart: unless-stopped
+    user: 0:0
+    networks:
+      - network
+    volumes:
+      - ./prometheus/config.yaml:/etc/config/config.yaml:ro
+      - prometheus:/data:rw
+    command:
+      - "sidecar"
+      - "--tsdb.path=/data"
+      - "--prometheus.url=http://prometheus:9090"
+      - "--reloader.config-file=/etc/config/config.yaml"
+      - |
+        --objstore.config=type: S3
+        config:
+          bucket: prometheus
+          access_key: ${ADMIN_USER}
+          secret_key: ${ADMIN_PASS}
+          endpoint: minio:9000
+          insecure: true
+    healthcheck:
+      test:
+        ["CMD", "wget", "--spider", "-q", "http://localhost:10902/-/healthy"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      prometheus:
+        condition: "service_healthy"
+      minio:
+        condition: "service_healthy"
+
+  thanos-store:
+    container_name: thanos-store
+    image: quay.io/thanos/thanos:v0.39.1
+    restart: unless-stopped
+    networks:
+      - network
+    command:
+      - "store"
+      - "--index-cache-size=250MB"
+      - "--chunk-pool-size=2GB"
+      - |
+        --objstore.config=type: S3
+        config:
+          bucket: prometheus
+          access_key: ${ADMIN_USER}
+          secret_key: ${ADMIN_PASS}
+          endpoint: minio:9000
+          insecure: true
+    volumes:
+      - prometheus:/data:rw
+    healthcheck:
+      test:
+        ["CMD", "wget", "--spider", "-q", "http://localhost:10902/-/healthy"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      prometheus:
+        condition: "service_healthy"
+      minio:
+        condition: "service_healthy"
+
+  thanos-query:
+    container_name: thanos-query
+    image: quay.io/thanos/thanos:v0.39.1
+    restart: unless-stopped
+    networks:
+      - network
+    command:
+      - "query"
+      - "--http-address=0.0.0.0:9090"
+      - "--grpc-address=0.0.0.0:9091"
+      - "--query.timeout=2m"
+      - "--endpoint=thanos-store:10901"
+      - "--endpoint=thanos-sidecar:10901"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      thanos-sidecar:
+        condition: "service_healthy"
+      thanos-store:
+        condition: "service_healthy"
+
+  grafana:
+    container_name: grafana
+    build:
+      context: ./grafana
+      args:
+        GF_URI: ${HOST_URI}/dashboard
+        KC_URI: ${HOST_URI}/auth
+        GF_CLIENT_SECRET: ${GF_CLIENT_SECRET}
+        DB_PASS: ${DB_PASS}
+    restart: unless-stopped
+    networks:
+      - network
+    volumes:
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    environment:
+      GF_SECURITY_ADMIN_USER: ${ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${ADMIN_PASS}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      keycloak:
+        condition: "service_healthy"
+
+  ####################################################
+  # Traffic Entrypoint                               #
+  ####################################################
+
+  cloudflare-tunnel:
+    container_name: cloudflare-tunnel
+    image: cloudflare/cloudflared:1710-3f6b1f24d036
+    restart: unless-stopped
+    command: tunnel --metrics 0.0.0.0:6000 run --token ${TUNNEL_TOKEN}
+    networks:
+      - network
+    volumes:
+      - healthcheck-build:/usr/bin/healthcheck:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/usr/bin/healthcheck/healthcheck",
+          "http://localhost:6000/ready",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      nginx:
+        condition: "service_healthy"
+
+  nginx:
+    container_name: nginx
+    build:
+      context: ./nginx
+    restart: unless-stopped
+    networks:
+      - network
+    ports:
+      - 5000:80
+    healthcheck:
+      test: service nginx status || exit 1
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      keycloak:
+        condition: "service_healthy"
+      grafana:
+        condition: "service_healthy"
+
+  ####################################################
+  # Metric Exporter                                  #
+  ####################################################
+
   cadvisor:
     container_name: cadvisor
     image: gcr.io/cadvisor/cadvisor:v0.52.0
     restart: unless-stopped
     privileged: true
     networks:
-      - homelab
+      - network
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:rw
@@ -111,7 +322,7 @@ services:
       - "--path.sysfs=/host/sys"
       - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
     networks:
-      - homelab
+      - network
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
@@ -122,74 +333,13 @@ services:
       timeout: 10s
       retries: 5
 
-  prometheus:
-    container_name: prometheus
-    image: prom/prometheus:v3.4.1
-    restart: unless-stopped
-    command: ["--config.file=/etc/prometheus/config.yaml"]
-    networks:
-      - homelab
-    volumes:
-      - ./prometheus/config.yaml:/etc/prometheus/config.yaml:ro
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-
-  grafana:
-    container_name: grafana
-    build:
-      context: ./grafana
-      args:
-        GF_URI: ${HOST_URI}/dashboard
-        KC_URI: ${HOST_URI}/auth
-        GF_CLIENT_SECRET: ${GF_CLIENT_SECRET}
-        DB_PASS: ${DB_PASS}
-    restart: unless-stopped
-    networks:
-      - homelab
-    volumes:
-      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
-    environment:
-      GF_SECURITY_ADMIN_USER: ${ADMIN_USER}
-      GF_SECURITY_ADMIN_PASSWORD: ${ADMIN_PASS}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-    depends_on:
-      keycloak:
-        condition: "service_healthy"
-
-  nginx:
-    container_name: nginx
-    build:
-      context: ./nginx
-    restart: unless-stopped
-    networks:
-      - homelab
-    ports:
-      - 5000:80
-    healthcheck:
-      test: service nginx status || exit 1
-      interval: 15s
-      timeout: 10s
-      retries: 5
-    depends_on:
-      keycloak:
-        condition: "service_healthy"
-      grafana:
-        condition: "service_healthy"
-
   nginx-exporter:
     container_name: nginx-exporter
     image: nginx/nginx-prometheus-exporter:1.4.2
     restart: unless-stopped
     command: ["--nginx.scrape-uri=http://nginx:8080/stub_status"]
     networks:
-      - homelab
+      - network
     volumes:
       - healthcheck-build:/usr/bin/healthcheck:ro
     healthcheck:
@@ -202,28 +352,44 @@ services:
       nginx:
         condition: "service_healthy"
 
-  cloudflare-tunnel:
-    container_name: cloudflare-tunnel
-    image: cloudflare/cloudflared:1710-3f6b1f24d036
+  postgres-exporter:
+    container_name: postgres-exporter
+    image: prometheuscommunity/postgres-exporter:v0.17.1
     restart: unless-stopped
-    command: tunnel --metrics 0.0.0.0:6000 run --token ${TUNNEL_TOKEN}
     networks:
-      - homelab
-    volumes:
-      - healthcheck-build:/usr/bin/healthcheck:ro
+      - network
+    environment:
+      DATA_SOURCE_URI: "postgres:5432/postgres?sslmode=disable"
+      DATA_SOURCE_USER: postgres
+      DATA_SOURCE_PASS: ${DB_PASS}
     healthcheck:
-      test:
-        [
-          "CMD",
-          "/usr/bin/healthcheck/healthcheck",
-          "http://localhost:6000/ready",
-        ]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9187/"]
       interval: 15s
       timeout: 10s
       retries: 5
     depends_on:
-      nginx:
+      postgres:
         condition: "service_healthy"
+
+  ####################################################
+  # Single Run                                       #
+  ####################################################
+
+  # https://stackoverflow.com/questions/66412289/minio-add-a-public-bucket-with-docker-compose
+  create-buckets:
+    container_name: create-buckets
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    networks:
+      - network
+    depends_on:
+      minio:
+        condition: "service_healthy"
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set myminio http://minio:9000 ${ADMIN_USER} ${ADMIN_PASS};
+      /usr/bin/mc mb myminio/prometheus;
+      exit 0;
+      "
 
   healthcheck-build:
     container_name: healthcheck-build
