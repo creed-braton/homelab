@@ -22,6 +22,7 @@ services:
       MINIO_ROOT_PASSWORD: ${ADMIN_PASS}
       MINIO_CONSOLE_ADDRESS: :9001
       MINIO_BROWSER_REDIRECT_URL: ${HOST_URI}/storage
+      MINIO_PROMETHEUS_AUTH_TYPE: public
     ulimits:
       nofile:
         soft: 4096
@@ -46,6 +47,19 @@ services:
       POSTGRES_PASSWORD: ${DB_PASS}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  redis:
+    container_name: redis
+    image: redis:8.0.2
+    restart: unless-stopped
+    command: ["redis-server", "--maxmemory", "2gb"]
+    networks:
+      - network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -102,7 +116,9 @@ services:
     container_name: prometheus
     image: prom/prometheus:v3.4.1
     restart: unless-stopped
-    user: 0:0
+    user: 0:0 # haven't gotten it to work without yet (needed for the shared Prometheus volume)
+    ports:
+      - 9090:9090
     command:
       [
         "--config.file=/etc/prometheus/config.yaml",
@@ -130,7 +146,7 @@ services:
     container_name: thanos-sidecar
     image: quay.io/thanos/thanos:v0.39.1
     restart: unless-stopped
-    user: 0:0
+    user: 0:0 # haven't gotten it to work without yet (needed for the shared Prometheus volume)
     networks:
       - network
     volumes:
@@ -165,6 +181,7 @@ services:
     container_name: thanos-store
     image: quay.io/thanos/thanos:v0.39.1
     restart: unless-stopped
+    user: 0:0 # haven't gotten it to work without yet (needed for the shared Prometheus volume)
     networks:
       - network
     command:
@@ -215,6 +232,30 @@ services:
       thanos-sidecar:
         condition: "service_healthy"
       thanos-store:
+        condition: "service_healthy"
+
+  tempo:
+    container_name: tempo
+    build:
+      context: ./tempo
+      args:
+        ACCESS_KEY: ${ADMIN_USER}
+        SECRET_KEY: ${ADMIN_PASS}
+    restart: unless-stopped
+    command: ["-config.file=/etc/config.yaml"]
+    networks:
+      - network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3200/ready"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      minio:
+        condition: "service_healthy"
+      redis:
+        condition: "service_healthy"
+      prometheus:
         condition: "service_healthy"
 
   grafana:
@@ -277,6 +318,7 @@ services:
     restart: unless-stopped
     networks:
       - network
+    # the port config can be removed in production
     ports:
       - 5000:80
     healthcheck:
@@ -371,6 +413,26 @@ services:
       postgres:
         condition: "service_healthy"
 
+  redis-exporter:
+    container_name: redis-exporter
+    image: bitnami/redis-exporter:1.74.0
+    restart: unless-stopped
+    networks:
+      - network
+    volumes:
+      - healthcheck-build:/usr/bin/healthcheck:ro
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    healthcheck:
+      test:
+        ["CMD", "/usr/bin/healthcheck/healthcheck", "http://localhost:9121/"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      redis:
+        condition: "service_healthy"
+
   ####################################################
   # Single Run                                       #
   ####################################################
@@ -388,6 +450,7 @@ services:
       /bin/sh -c "
       /usr/bin/mc alias set myminio http://minio:9000 ${ADMIN_USER} ${ADMIN_PASS};
       /usr/bin/mc mb myminio/prometheus;
+      /usr/bin/mc mb myminio/tempo;
       exit 0;
       "
 

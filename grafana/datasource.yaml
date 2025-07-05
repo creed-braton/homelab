@@ -7,3 +7,11 @@ datasources:
     url: http://thanos-query:9090
     isDefault: true
     editable: false
+
+  - name: Tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    isDefault: false
+    jsonData:
+      max_trace_duration: 720h # retention period of traces in Tempo
