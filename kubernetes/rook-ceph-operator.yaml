@@ -9,14 +9,15 @@ spec:
       prune: true
       selfHeal: true
     syncOptions:
-      - CreateNamespace=false
+      - CreateNamespace=true
   project: default
   source:
-    chart: rook-ceph
-    repoURL: https://charts.rook.io/master
-    targetRevision: v1.0.0
+    repoURL: https://github.com/creed-braton/homelab.git
+    targetRevision: cluster
+    path: rook-ceph
     helm:
-      releaseName: rook-ceph
+      valueFiles:
+        - values.yaml
   destination:
     server: https://kubernetes.default.svc
     namespace: rook-ceph
