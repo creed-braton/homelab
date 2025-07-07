@@ -12,13 +12,17 @@ spec:
       - CreateNamespace=false
   project: default
   source:
-    chart: rook-ceph
-    repoURL: https://charts.rook.io/master
-    targetRevision: v1.0.0
-    helm:
-      releaseName: rook-ceph
-      valueFiles:
-        - values.yaml
+    - chart: rook-ceph
+      repoURL: https://charts.rook.io/master
+      targetRevision: v1.0.0
+      helm:
+        releaseName: rook-ceph
+        valueFiles:
+          - $values/values.yaml
+    - repoURL: https://github.com/creed-braton/homelab.git
+      targetRevision: cluster
+      path: rook-ceph
+      ref: values
   destination:
     server: https://kubernetes.default.svc
     namespace: rook-ceph
