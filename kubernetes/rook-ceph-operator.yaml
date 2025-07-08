@@ -13,8 +13,7 @@ spec:
   project: default
   source:
     chart: rook-ceph
-    repoURL: https://charts.rook.io/release
-    path: rook-ceph/rook-ceph
+    repoURL: https://charts.rook.io/master
     targetRevision: v1.17.5
     helm:
       releaseName: rook-ceph
