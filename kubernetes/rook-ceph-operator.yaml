@@ -13,7 +13,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/creed-braton/homelab.git
-    path: rook-ceph
+    path: rook-ceph/rook-ceph
     targetRevision: cluster
     helm:
       releaseName: rook-ceph
