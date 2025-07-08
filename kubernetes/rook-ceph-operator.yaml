@@ -12,7 +12,6 @@ spec:
       - CreateNamespace=true
   project: default
   source:
-    chart: rook-ceph
     repoURL: https://github.com/creed-braton/homelab.git
     path: rook-ceph
     targetRevision: cluster
