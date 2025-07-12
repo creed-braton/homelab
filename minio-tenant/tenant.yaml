@@ -28,7 +28,7 @@ spec:
           resources:
             requests:
               storage: 512Gi
-          storageClassName: standard
+          storageClassName: longhorn
         status: {}
       securityContext:
         runAsUser: 1000
