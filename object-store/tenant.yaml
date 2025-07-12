@@ -1,8 +1,8 @@
 apiVersion: minio.min.io/v2
 kind: Tenant
 metadata:
-  name: object-store
-  namespace: minio-tenant
+  name: minio-tenant
+  namespace: object-store
 spec:
   credsSecret:
     name: tenant-creds-secret
