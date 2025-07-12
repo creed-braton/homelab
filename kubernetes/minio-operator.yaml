@@ -1,22 +1,20 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: minio-operator
+  name: minio-tenant
   namespace: argocd
 spec:
   syncPolicy:
     automated:
-      selfHeal: true
       prune: true
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
   project: default
   source:
-    chart: operator
-    repoURL: https://operator.min.io/
-    targetRevision: 7.1.1
-    helm:
-      releaseName: operator
+    repoURL: https://github.com/creed-braton/homelab.git
+    targetRevision: cluster
+    path: minio-tenant
   destination:
-    server: "https://kubernetes.default.svc"
-    namespace: minio-operator
+    server: https://kubernetes.default.svc
+    namespace: minio-tenant

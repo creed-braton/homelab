@@ -1,0 +1,49 @@
+apiVersion: minio.min.io/v2
+kind: Tenant
+metadata:
+  name: tenant
+  namespace: minio-tenant
+  labels:
+    app: minio
+spec:
+  users:
+    - name: storage-user
+  podManagementPolicy: Parallel
+  configuration:
+    name: storage-configuration
+  image: quay.io/minio/minio:RELEASE.2025-04-08T15-41-24Z
+  imagePullSecret: {}
+  mountPath: /export
+  pools:
+    - servers: 1
+      name: pool-0
+      volumesPerServer: 1
+      volumeClaimTemplate:
+        apiVersion: v1
+        kind: persistentvolumeclaims
+        metadata: {}
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 512Gi
+          storageClassName: standard
+        status: {}
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        fsGroup: 1000
+        fsGroupChangePolicy: "OnRootMismatch"
+      containerSecurityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        seccompProfile:
+          type: RuntimeDefault
+  requestAutoCert: true
