@@ -1,0 +1,44 @@
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: Keycloak
+metadata:
+  labels:
+    app: keycloak
+  name: keycloak
+  namespace: keycloak-cluster
+spec:
+  hostname:
+    hostname: http://192.168.178.35:8080
+  resources:
+    requests:
+      cpu: "1"
+      memory: "1024M"
+    limits:
+      cpu: "1"
+      memory: "1024M"
+  db:
+    vendor: postgres
+    url: jdbc:postgresql://postgres-service.keycloak-cluster.svc.cluster.local:5432/postgres
+    poolMinSize: 30
+    poolInitialSize: 30
+    poolMaxSize: 30
+    usernameSecret:
+      name: keycloak-db-secret
+      key: username
+    passwordSecret:
+      name: keycloak-db-secret
+      key: password
+  image: quay.io/keycloak/keycloak:26.3
+  startOptimized: false
+  features:
+    enabled:
+      - multi-site
+  additionalOptions:
+    - name: log-console-output
+      value: json
+    - name: metrics-enabled
+      value: "true"
+    - name: event-metrics-user-enabled
+      value: "true"
+  http:
+    tlsSecret: keycloak-tls-secret
+  instances: 1

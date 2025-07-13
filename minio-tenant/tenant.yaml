@@ -27,7 +27,7 @@ spec:
             - ReadWriteOnce
           resources:
             requests:
-              storage: 512Gi
+              storage: 100Gi
           storageClassName: longhorn
         status: {}
       securityContext:
