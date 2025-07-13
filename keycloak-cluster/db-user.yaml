@@ -5,5 +5,5 @@ metadata:
   namespace: keycloak-cluster
 type: Opaque
 data:
-  username: cG9zdGdyZXM==
-  password: d2VydDEyMzQ==
+  username: cG9zdGdyZXM=
+  password: d2VydDEyMzQ=
