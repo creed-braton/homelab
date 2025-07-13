@@ -5,7 +5,7 @@ metadata:
 spec:
   db:
     vendor: postgres
-    url: jdbc:postgresql://postgres-service.keycloak-cluster.svc.cluster.local:5432/postgres
+    url: jdbc:postgresql://postgres-service.keycloak.svc.cluster.local:5432/postgres
     usernameSecret:
       name: keycloak-db-secret
       key: username
