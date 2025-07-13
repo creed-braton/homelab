@@ -17,4 +17,4 @@ spec:
     path: keycloak-cluster
   destination:
     server: https://kubernetes.default.svc
-    namespace: keycloak-cluster
+    namespace: keycloak
