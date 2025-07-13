@@ -12,7 +12,7 @@ spec:
       - CreateNamespace=true
   project: default
   source:
-    repoURL: https://github.com/keycloak/keycloak-k8s-resources.get
+    repoURL: https://github.com/keycloak/keycloak-k8s-resources.git
     targetRevision: 26.3.1
     path: kubernetes
   destination:
