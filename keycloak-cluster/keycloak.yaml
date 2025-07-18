@@ -24,5 +24,12 @@ spec:
       - authorization
       - admin
       - step-up-authentication
+  additionalOptions:
+    - name: log-console-output
+      value: json
+    - name: metrics-enabled
+      value: "true"
+    - name: event-metrics-user-enabled
+      value: "true"
   transaction:
     xaEnabled: false

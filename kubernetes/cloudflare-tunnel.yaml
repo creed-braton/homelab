@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: keycloak-cluster
+  name: cloudflare-tunnel
   namespace: argocd
 spec:
   syncPolicy:
@@ -14,7 +14,7 @@ spec:
   source:
     repoURL: https://github.com/creed-braton/homelab.git
     targetRevision: cluster
-    path: keycloak-cluster
+    path: cloudflare-tunnel
   destination:
     server: https://kubernetes.default.svc
-    namespace: keycloak # needs to be same namespace as the keycloak operator
+    namespace: cloudflare-tunnel
