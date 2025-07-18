@@ -20,6 +20,8 @@ spec:
           args:
             - tunnel
             - run
+            - --token
+            - $(TUNNEL_TOKEN)
           env:
             - name: TUNNEL_TOKEN
               valueFrom:
