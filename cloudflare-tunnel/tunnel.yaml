@@ -10,7 +10,6 @@ spec:
       app: cloudflared
   template:
     metadata:
-      namespace: cloudflare-tunnel
       labels:
         app: cloudflared
     spec:
@@ -19,12 +18,15 @@ spec:
           image: cloudflare/cloudflared:1710-3f6b1f24d036
           args:
             - tunnel
+            - --no-autoupdate
             - run
-            - --token
-            - $(TUNNEL_TOKEN)
-          env:
-            - name: TUNNEL_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: token
-                  key: TUNNEL_TOKEN
+            - --credentials-file
+            - /etc/cloudflared/credentials.json
+          volumeMounts:
+            - name: cloudflared-creds
+              mountPath: /etc/cloudflared
+              readOnly: true
+      volumes:
+        - name: cloudflared-creds
+          secret:
+            secretName: cloudflared-credentials

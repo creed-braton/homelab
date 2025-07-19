@@ -1,6 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  namespace: cloudflare-tunnel
   name: nginx
 spec:
   replicas: 1
@@ -9,7 +10,6 @@ spec:
       app: nginx
   template:
     metadata:
-      namespace: cloudflare-tunnel
       labels:
         app: nginx
     spec:
