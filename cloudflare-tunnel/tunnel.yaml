@@ -16,9 +16,12 @@ spec:
       containers:
         - name: cloudflared
           image: cloudflare/cloudflared:1710-3f6b1f24d036
-          args:
+          command:
+            - cloudflared
             - tunnel
             - --no-autoupdate
+            - --loglevel
+            - debug
             - run
           env:
             - name: TUNNEL_TOKEN
@@ -26,3 +29,12 @@ spec:
                 secretKeyRef:
                   name: tunnel
                   key: token
+          livenessProbe:
+            httpGet:
+              # Cloudflared has a /ready endpoint which returns 200 if and only if
+              # it has an active connection to Cloudflare's network.
+              path: /ready
+              port: 2000
+            failureThreshold: 1
+            initialDelaySeconds: 10
+            periodSeconds: 10
