@@ -32,6 +32,7 @@ spec:
             - 0.0.0.0:2000
             - run
             - --token
+            - $TUNNEL_TOKEN
           livenessProbe:
             httpGet:
               path: /ready
