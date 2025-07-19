@@ -33,6 +33,7 @@ spec:
             - run
             - --token
             - $(TUNNEL_TOKEN)
+            - homelab-tunnel
           livenessProbe:
             httpGet:
               path: /ready
