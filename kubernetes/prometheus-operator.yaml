@@ -17,6 +17,10 @@ spec:
       targetRevision: 75.13.0
       helm:
         releaseName: prometheus-stack
+        skipCrds: false
+        values: |
+          crds:
+            enabled: true
   destination:
     server: https://kubernetes.default.svc
     namespace: prometheus-operator
