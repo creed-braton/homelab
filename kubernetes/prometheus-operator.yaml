@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prometheus-operator
+  namespace: argocd
+spec:
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+    syncOptions:
+      - CreateNamespace=true
+  project: default
+  sources:
+    - chart: prometheus-community
+      repoURL: https://prometheus-community.github.io/helm-charts/
+      targetRevision: kube-prometheus-stack-75.13.0
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: prometheus-operator
