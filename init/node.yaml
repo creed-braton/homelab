@@ -7,23 +7,6 @@
       shell: |
         hostnamectl set-hostname "{{ inventory_hostname }}"
 
-    - name: Set node routing
-      ansible.builtin.copy:
-        dest: /etc/hosts
-        content: |
-          127.0.0.1	localhost
-          ::1		localhost ip6-localhost ip6-loopback
-          ff02::1		ip6-allnodes
-          ff02::2		ip6-allrouters
-
-          # Ansible managed entries
-          {% for host in ansible_play_hosts %}
-          {{ hostvars[host]['ansible_default_ipv4']['address'] }} {{ host }} {{ host }}
-          {% endfor %}
-        owner: root
-        group: root
-        mode: "0644"
-
     - name: Disable swap memory
       shell: |
         swapoff -a &&
@@ -75,15 +58,11 @@
     - name: Install Kubernetes
       shell: |
         rm -rf /etc/apt/keyrings/kubernetes-apt-keyring.gpg &&
-        echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.33/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list &&
-        curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.33/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg &&
+        echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.34/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list &&
+        curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.34/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg &&
         apt update &&
         apt install -y kubelet kubeadm kubectl &&
         apt-mark hold kubelet kubeadm kubectl
-
-    - name: Install Docker
-      shell: |
-        apt-get install -y docker-ce
 
     - name: Open Kubernetes API port
       shell: |

@@ -1,0 +1,13 @@
+---
+- name: Initialize master node
+  hosts: master
+  become: yes
+  tasks:
+    - name: Generate kubeadm join command
+      command: kubeadm token create --print-join-command
+      register: join_cmd
+      delegate_to: master
+      run_once: true
+
+    - name: Join worker to cluster
+      command: "{{ join_cmd.stdout }}"
