@@ -11,6 +11,7 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - Replace=true
   project: default
   source:
     chart: kube-prometheus-stack
