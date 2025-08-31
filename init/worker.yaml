@@ -1,6 +1,6 @@
 ---
-- name: Initialize master node
-  hosts: master
+- name: Initialize worker node
+  hosts: worker
   become: yes
   tasks:
     - name: Generate kubeadm join command

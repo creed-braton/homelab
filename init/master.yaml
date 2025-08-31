@@ -22,3 +22,7 @@
       shell: |
         kubectl create namespace argocd &&
         kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.1.1/manifests/install.yaml
+
+    - name: Apply ArgoCD root app
+      shell: |
+        kubectl apply -f https://raw.githubusercontent.com/creed-braton/homelab/cluster/init/root-app.yaml
