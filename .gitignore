@@ -16,6 +16,7 @@
 **/*tfplan*
 **/.terraformrc
 **/terraform.rc
+**/credentials.json
 
 # Editor directories and files
 **/.vscode/*

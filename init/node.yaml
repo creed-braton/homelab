@@ -1,0 +1,75 @@
+---
+- name: Initialize Kubernetes
+  hosts: node
+  become: yes
+  tasks:
+    - name: Set hostname
+      shell: |
+        hostnamectl set-hostname "{{ inventory_hostname }}"
+
+    - name: Disable swap memory
+      shell: |
+        swapoff -a &&
+        sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+
+    - name: Configure containerd and Kubernetes routing
+      shell: |
+        tee /etc/modules-load.d/containerd.conf <<EOF
+        overlay
+        br_netfilter
+        EOF &&
+        modprobe overlay &&
+        modprobe br_netfilter &&
+        echo "net.ipv4.ip_forward = 1" | tee /etc/sysctl.d/kubernetes.conf &&
+        sysctl --system
+
+    - name: Update apt package list
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install dependencies
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - socat
+          - gnupg2
+        state: present
+
+    - name: Install containerd
+      shell: |
+        rm -rf /etc/apt/trusted.gpg.d/docker.gpg &&
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmour -o /etc/apt/trusted.gpg.d/docker.gpg &&
+        add-apt-repository -y "deb [arch=arm64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" &&
+        apt update &&
+        apt install -y containerd.io &&
+        containerd config default | tee /etc/containerd/config.toml >/dev/null 2>&1 &&
+        sed -i 's/SystemdCgroup \= false/SystemdCgroup \= true/g' /etc/containerd/config.toml &&
+        systemctl restart containerd &&
+        systemctl enable containerd
+
+    - name: Install Kubernetes
+      shell: |
+        rm -rf /etc/apt/keyrings/kubernetes-apt-keyring.gpg &&
+        echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.34/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list &&
+        curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.34/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg &&
+        apt update &&
+        apt install -y kubelet kubeadm kubectl &&
+        apt-mark hold kubelet kubeadm kubectl
+
+    - name: Open Kubernetes API port
+      shell: |
+        iptables -A INPUT -p tcp --dport 6443 -j ACCEPT
+
+    - name: Enable memory cgroup
+      shell: |
+        truncate -s -1 /boot/firmware/cmdline.txt
+        echo -n " cgroup_enable=memory cgroup_memory=1" | tee -a /boot/firmware/cmdline.txt > /dev/null
+
+    - name: Reboot
+      ansible.builtin.reboot:
+        reboot_timeout: 600
+        test_command: whoami
