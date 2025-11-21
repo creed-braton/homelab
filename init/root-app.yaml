@@ -11,7 +11,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/creed-braton/homelab.git
-    targetRevision: cluster
+    targetRevision: main
     path: apps
   destination:
     server: https://kubernetes.default.svc

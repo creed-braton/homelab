@@ -23,19 +23,6 @@
         kubectl create namespace argocd &&
         kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.1.1/manifests/install.yaml
 
-    - name: Setup Cloudflare tunnel resources
-      vars:
-        tunnel_token: "{{ lookup('env', 'TUNNEL_TOKEN') }}"
-      shell: |
-        kubectl patch configmap argocd-cmd-params-cm -n argocd --type merge -p '{
-          "data": {
-            "server.basehref": "/cluster",
-            "server.rootpath": "/cluster"
-          }
-        }' &&
-        kubectl rollout restart deployment argocd-server -n argocd &&
-        kubectl create namespace cloudflare-tunnel &&
-
     - name: Apply ArgoCD root app
       shell: |
-        kubectl apply -f https://raw.githubusercontent.com/creed-braton/homelab/cluster/init/root-app.yaml
+        kubectl apply -f https://raw.githubusercontent.com/creed-braton/homelab/main/init/root-app.yaml
